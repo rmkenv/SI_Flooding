@@ -25,17 +25,3 @@ new_aoi['flood_predicted'] = pred_new
 
 new_aoi.to_csv("FloodPredictions_NEW_AOI.csv", index=False)
 
-# Optional: Visualize with geopandas if '.geo' exists
-try:
-    import geopandas as gpd
-    import shapely.geometry
-    import ast
-    if '.geo' in new_aoi.columns:
-        new_aoi['geometry'] = new_aoi['.geo'].apply(lambda g: shapely.geometry.shape(ast.literal_eval(g)))
-        gdf = gpd.GeoDataFrame(new_aoi, geometry='geometry')
-        gdf.plot(column='flood_probability', cmap='Blues', markersize=1, legend=True)
-        import matplotlib.pyplot as plt
-        plt.title('Predicted Flood Probability in New AOI')
-        plt.show()
-except Exception as e:
-    print("Optional GIS visualization skipped:", e)

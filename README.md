@@ -2,13 +2,15 @@
 
 **Flood Risk Analysis and Visualization Toolkit**
 
-This project processes model-predicted flood areas, compares them to FEMA's Special Flood Hazard Areas (SFHA), and visualizes the results on a satellite basemap for any user-defined area of interest (AOI) in the United States.
+This project processes model-predicted flood areas, compares them to FEMA's Special Flood Hazard Areas (SFHA), and visualizes the results on a satellite basemap for any user-defined area of interest (AOI) in the United States.  
+Now supports loading a pre-trained flood prediction model via a `.joblib` file.
 
 ---
 
 ## Features
 
 - Loads flood prediction data exported from Google Earth Engine (GEE) as CSV with GeoJSON geometries.
+- Optionally loads a pre-trained flood prediction model (`.joblib`) for local prediction.
 - Converts CSV to a GeoDataFrame with robust geometry parsing.
 - Fetches FEMA NFHL flood zone polygons for your AOI via the ArcGIS REST API.
 - Identifies model-predicted flooded areas that fall outside FEMA's mapped SFHA zones.
@@ -32,10 +34,21 @@ The flood prediction model used in this toolkit is trained using satellite image
 - **Model Type:**  
   A supervised machine learning classifier (e.g., Random Forest, Gradient Boosting, or similar) is trained to distinguish flooded from non-flooded areas based on the extracted features.
 
+### Using a Pre-trained Model (`.joblib`)
+
+- You can use a pre-trained model saved as a `.joblib` file (e.g., `flood_model.joblib`) for local flood prediction.
+- The script will load this model and apply it to your input features if specified in the configuration.
+- Example:
+  ```python
+  from joblib import load
+  model = load('flood_model.joblib')
+  predictions = model.predict(X)  # X is your feature matrix
+  ```
+
 ### Prediction and Export
 
-- The trained model is applied to new satellite imagery to generate flood predictions for the AOI.
-- Results are exported from Google Earth Engine as a CSV file, with each row representing a spatial feature (polygon or point) and a `flood_predicted` value (1 for flooded, 0 for not flooded).
+- The trained model is applied to new satellite imagery or feature data to generate flood predictions for the AOI.
+- Results are exported from Google Earth Engine as a CSV file, or generated locally using the `.joblib` model, with each row representing a spatial feature (polygon or point) and a `flood_predicted` value (1 for flooded, 0 for not flooded).
 
 ### Results Interpretation
 
@@ -57,6 +70,8 @@ Model performance (accuracy, recall, etc.) will vary depending on the quality an
 - [matplotlib](https://matplotlib.org/)
 - [contextily](https://contextily.readthedocs.io/)
 - [requests](https://requests.readthedocs.io/)
+- [joblib](https://joblib.readthedocs.io/)
+- [scikit-learn](https://scikit-learn.org/)
 - [dataclasses](https://docs.python.org/3/library/dataclasses.html) (Python 3.7+)
 - [urllib3](https://urllib3.readthedocs.io/)
 
@@ -74,9 +89,10 @@ Get up and running in 3 simple steps:
 ```python
 from flood_analysis import FloodAnalyzer, FloodAnalysisConfig
 
-# 1. Configure your analysis
+# 1. Configure your analysis (add model_path if using a .joblib model)
 config = FloodAnalysisConfig(
-    csv_file_path='your_flood_predictions.csv',  # Path to your GEE export
+    csv_file_path='your_flood_predictions.csv',  # Path to your GEE export or feature CSV
+    model_path='flood_model.joblib',             # Path to your pre-trained model (optional)
     output_dir='results'                         # Where to save outputs
 )
 
@@ -96,12 +112,14 @@ print(f"Areas outside FEMA zones: {report['areas_outside_fema']}")
 ## Usage
 
 1. **Prepare your CSV**  
-   Export your flood prediction data from GEE. The CSV must include:
+   Export your flood prediction data from GEE, or generate it locally using your `.joblib` model. The CSV must include:
    - `.geo` column (GeoJSON geometry as string)
-   - `flood_predicted` column (1 for flooded, 0 for not flooded)
+   - `flood_predicted` column (1 for flooded, 0 for not flooded)  
+   *or*  
+   - Feature columns required by your model, if you want to generate predictions locally.
 
-2. **Place your CSV**  
-   Put your CSV file in the project root or specify its path in the config.
+2. **Place your CSV and model file**  
+   Put your CSV and `.joblib` model file in the project root or specify their paths in the config.
 
 3. **Run the analysis**
    ```bash
@@ -121,6 +139,7 @@ print(f"Areas outside FEMA zones: {report['areas_outside_fema']}")
 
 Edit the configuration at the top of the script or in the `FloodAnalysisConfig` dataclass:
 - `csv_file_path`: Path to your CSV file
+- `model_path`: Path to your `.joblib` model file (optional)
 - `initial_crs`: CRS of your data (default: `EPSG:4326`)
 - `fema_sfha_layer_id`: FEMA MapServer layer ID for SFHA (default: 27)
 - `sfha_zones`: List of FEMA flood zone codes considered as SFHA
@@ -130,6 +149,7 @@ Edit the configuration at the top of the script or in the `FloodAnalysisConfig` 
 ```python
 config = FloodAnalysisConfig(
     csv_file_path='data/miami_flood_predictions.csv',
+    model_path='models/miami_flood_model.joblib',
     initial_crs='EPSG:4326',
     web_mercator_crs='EPSG:3857',
     fema_sfha_layer_id=27,
@@ -150,6 +170,9 @@ config = FloodAnalysisConfig(
 
 - **Basemap not displaying**  
   Requires internet connection and the `contextily` package.
+
+- **Model loading errors**  
+  Ensure your `.joblib` file is present and compatible with your feature columns.
 
 ---
 

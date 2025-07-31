@@ -1,8 +1,37 @@
-pandas>=1.0.0
+# Core dependencies
+pandas>=1.5.0
 numpy>=1.20.0
 scikit-learn>=1.0.0
-matplotlib>=3.0.0
+matplotlib>=3.5.0
 joblib>=1.0.0
-geopandas>=0.10.0 # For optional GIS visualization
-shapely>=1.8.0   # Dependency for geopandas
-rasterio>=1.2.0  # For loading/saving GeoTIFFs (essential for applying model to full rasters)
+
+# Geospatial dependencies
+geopandas>=0.12.0
+shapely>=1.8.0
+rasterio>=1.3.0
+contextily>=1.2.0
+folium>=0.14.0
+
+# Web and API dependencies
+requests>=2.28.0
+urllib3>=1.26.0
+
+# Data processing
+pyproj>=3.4.0
+fiona>=1.8.0
+
+# Optional visualization enhancements
+plotly>=5.0.0
+seaborn>=0.11.0
+
+# Development dependencies (optional)
+pytest>=7.0.0
+black>=22.0.0
+isort>=5.10.0
+flake8>=5.0.0
+mypy>=0.991
+bandit>=1.7.0
+
+# Documentation (optional)
+sphinx>=5.0.0
+sphinx-rtd-theme>=1.0.0

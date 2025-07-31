@@ -1,152 +1,177 @@
-# SI\_Flooding: Satellite Imagery for Flood Detection and Mapping
+# SI_Flooding
 
-This repository contains the Google Earth Engine (GEE) and Python scripts for a satellite-based flood detection and mapping project, with an example focusing on the Miami region. The workflow leverages Sentinel-1 (SAR) and Sentinel-2 (Optical) imagery, along with auxiliary geospatial data, to train a machine learning model for flood classification and generate probabilistic flood maps.
+**Flood Risk Analysis and Visualization Toolkit**
 
-## Project Overview
+This project processes model-predicted flood areas, compares them to FEMA's Special Flood Hazard Areas (SFHA), and visualizes the results on a satellite basemap for any user-defined area of interest (AOI) in the United States.
 
-The core idea is to:
-
-1.  **Prepare Satellite Data in GEE**: Extract relevant features (water indices, SAR backscatter, elevation, slope, landcover, seasonality) from GEE.
-2.  **Train a Machine Learning Model (Python)**: Use a Random Forest classifier, trained on sample data exported from GEE, to learn the characteristics of flood events.
-3.  **Predict Flood Probabilities (Python)**: Apply the trained model to new geospatial data (also exported from GEE) to generate flood probability maps over a specified Area of Interest (AOI).
+---
 
 ## Features
 
-  * **Multi-Sensor Data Integration**: Utilizes Sentinel-1 (SAR) for all-weather flood detection and Sentinel-2 (Optical) for various water indices.
-  * **Comprehensive Feature Engineering**: Calculates NDWI, MNDWI, AWEI, integrates VV polarization, SRTM elevation and slope, ESA WorldCover landcover, and JRC Global Surface Water seasonality.
-  * **Robust Cloud Masking**: Employs Sentinel-2 Cloud Probability and custom masking techniques for optical imagery.
-  * **Advanced ML Training**: Implements a Random Forest Classifier with:
-      * Stratified K-Fold Cross-Validation.
-      * Randomized Search for Hyperparameter Tuning.
-      * Class weighting to handle imbalanced flood/non-flood classes.
-      * Probability calibration using Isotonic Regression.
-      * Permutation Importance for robust feature importance analysis.
-  * **Geospatial Prediction and Export**: Exports trained models and applies them to generate georeferenced flood probability and classification maps.
-  * **Visualization**: Includes optional `geopandas` integration for quick visualization of predicted flood maps.
+- Loads flood prediction data exported from Google Earth Engine (GEE) as CSV with GeoJSON geometries.
+- Converts CSV to a GeoDataFrame with robust geometry parsing.
+- Fetches FEMA NFHL flood zone polygons for your AOI via the ArcGIS REST API.
+- Identifies model-predicted flooded areas that fall outside FEMA's mapped SFHA zones.
+- Visualizes all results on a satellite basemap, highlighting areas of interest.
+- Saves outputs (GeoJSON, PNG, PDF, and JSON summary report) to an `outputs/` directory.
 
-## Getting Started
+---
 
-### Prerequisites
+## Model Training and Results
 
-  * **Google Earth Engine Account**: Access to the GEE Code Editor.
-  * **Python 3.x**:
-      * `pandas`
-      * `numpy`
-      * `scikit-learn`
-      * `matplotlib`
-      * `joblib`
-      * `geopandas` (optional, for visualization of `.geo` column)
-      * `shapely` (optional, dependency for `geopandas`)
-      * `rasterio` (required for applying model to full GeoTIFFs, not explicitly in the provided `apply_flood_model.py` but would be necessary for a full raster workflow)
+### Model Overview
 
-### Installation
+The flood prediction model used in this toolkit is trained using satellite imagery and historical flood data. The workflow is designed to be flexible and can be adapted to any area of interest (AOI) in the United States.
 
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/rmkenv/SI_Flooding.git
-    cd SI_Flooding
-    ```
-2.  **Install Python dependencies**:
-    ```bash
-    pip install pandas numpy scikit-learn matplotlib joblib
-    # For optional geospatial visualization:
-    pip install geopandas shapely
-    # For future raster prediction:
-    pip install rasterio
-    ```
+- **Input Data:**  
+  The model leverages multi-temporal satellite imagery (e.g., Sentinel-1 SAR, Sentinel-2 optical) and, where available, historical flood event records.
+- **Features:**  
+  Features may include spectral indices (NDWI, MNDWI), backscatter values, topography, land cover, and temporal change metrics.
+- **Labels:**  
+  Training labels are derived from known flood extents, such as those mapped by government agencies or from high-confidence remote sensing flood maps.
+- **Model Type:**  
+  A supervised machine learning classifier (e.g., Random Forest, Gradient Boosting, or similar) is trained to distinguish flooded from non-flooded areas based on the extracted features.
+
+### Prediction and Export
+
+- The trained model is applied to new satellite imagery to generate flood predictions for the AOI.
+- Results are exported from Google Earth Engine as a CSV file, with each row representing a spatial feature (polygon or point) and a `flood_predicted` value (1 for flooded, 0 for not flooded).
+
+### Results Interpretation
+
+- The toolkit compares model-predicted flooded areas to FEMA's mapped Special Flood Hazard Areas (SFHA).
+- Areas predicted as flooded by the model but not mapped as SFHA by FEMA are highlighted, helping to identify potential gaps in official flood risk mapping.
+- All results are visualized on a satellite basemap for easy interpretation.
+
+**Note:**  
+Model performance (accuracy, recall, etc.) will vary depending on the quality and quantity of training data, the AOI, and the features used. Users are encouraged to validate predictions with local knowledge or additional data sources where possible.
+
+---
+
+## Requirements
+
+- Python 3.8+
+- [pandas](https://pandas.pydata.org/)
+- [geopandas](https://geopandas.org/)
+- [shapely](https://shapely.readthedocs.io/)
+- [matplotlib](https://matplotlib.org/)
+- [contextily](https://contextily.readthedocs.io/)
+- [requests](https://requests.readthedocs.io/)
+- [dataclasses](https://docs.python.org/3/library/dataclasses.html) (Python 3.7+)
+- [urllib3](https://urllib3.readthedocs.io/)
+
+Install dependencies with:
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Quickstart
+
+Get up and running in 3 simple steps:
+
+```python
+from flood_analysis import FloodAnalyzer, FloodAnalysisConfig
+
+# 1. Configure your analysis
+config = FloodAnalysisConfig(
+    csv_file_path='your_flood_predictions.csv',  # Path to your GEE export
+    output_dir='results'                         # Where to save outputs
+)
+
+# 2. Initialize and run analysis
+analyzer = FloodAnalyzer(config)
+report = analyzer.run_analysis()
+
+# 3. View results
+print(f"Analysis complete! Found {report['flood_predictions']} flood predictions")
+print(f"Areas outside FEMA zones: {report['areas_outside_fema']}")
+```
+
+**That's it!** Your analysis will run automatically, create visualizations, and save all outputs to the specified directory.
+
+---
 
 ## Usage
 
-The workflow involves two main parts: data preparation in GEE and model training/prediction in Python.
+1. **Prepare your CSV**  
+   Export your flood prediction data from GEE. The CSV must include:
+   - `.geo` column (GeoJSON geometry as string)
+   - `flood_predicted` column (1 for flooded, 0 for not flooded)
 
-### Step 1: Data Preparation in Google Earth Engine
+2. **Place your CSV**  
+   Put your CSV file in the project root or specify its path in the config.
 
-1.  **Open the GEE script**: Copy the content of `gee_flood_feature_extraction.js` into your Google Earth Engine Code Editor.
-2.  **Review `USER SETTINGS`**: Adjust `preStart`, `preEnd`, `postStart`, `postEnd` dates, `cloudFilt`, `scale`, and the `miami` Area of Interest as needed for your analysis.
-3.  **Run the script**: Click the "Run" button in the GEE Code Editor.
-4.  **Monitor Tasks**: Go to the "Tasks" tab on the right panel. You will see several export tasks initiated:
-      * `FloodSamples_YYYYMMDD.csv`: This is your training data, containing feature values and flood labels for sampled points.
-      * `predictor_bands_for_ml_YYYYMMDD.tif`: This GeoTIFF contains all the predictor bands (`ndwi_post`, `mndwi_post`, `awei_post`, `VV`, `elevation`, `slope`, `Map`, `jrc_seasonality`) for a specific AOI. You will use this to make predictions over an entire area.
-      * `flood_mask_final_YYYYMMDD.tif`: The raw flood mask generated by the GEE script.
-      * `changeMap_YYYYMMDD.tif`: A map showing water change categories.
-5.  **Download exported files**: Once the tasks are complete, download `FloodSamples_YYYYMMDD.csv` to the root directory of your Python project. Download `predictor_bands_for_ml_YYYYMMDD.tif` to a location where your prediction script can access it (e.g., in a `data/` subdirectory or the root of your Python project).
+3. **Run the analysis**
+   ```bash
+   python flood_analysis.py
+   ```
+   (Replace `flood_analysis.py` with your actual script name.)
 
-### Step 2: Model Training (Python)
+4. **Outputs**  
+   - `outputs/flood_predictions.geojson`: All model predictions as GeoJSON
+   - `outputs/outside_fema_predictions.geojson`: Model-predicted flooded areas outside FEMA SFHA
+   - `outputs/flood_analysis_map.png` and `.pdf`: Visualization
+   - `outputs/analysis_report.json`: Summary statistics
 
-This script trains the Random Forest classifier using the samples exported from GEE.
+---
 
-1.  **Update `CONFIG` in `train_flood_prediction_model.py`**:
-    Ensure the `csv_path` in `CONFIG` points to your downloaded `FloodSamples_YYYYMMDD.csv`.
-    **Crucially, verify that the `features` and `categorical_features` lists in `CONFIG` exactly match the column names in your `FloodSamples_YYYYMMDD.csv` file.** Based on typical GEE exports and common column name formats, these should be:
-    ```python
-    CONFIG = {
-        "csv_path": "FloodSamples_20240101.csv", # Replace with your actual file name
-        "features": [
-            'ndwi_post', 'mndwi_post', 'awei_post', 'VV',
-            'elevation', 'slope', 'Map', 'jrc_seasonality'
-        ],
-        "categorical_features": ['Map'],
-        # ... other settings
-    }
-    ```
-2.  **Run the training script**:
-    ```bash
-    python train_flood_prediction_model.py
-    ```
-    This script will:
-      * Load and preprocess the data.
-      * Train a Random Forest model with hyperparameter tuning.
-      * Evaluate the model on a holdout test set, printing various metrics (Confusion Matrix, Classification Report, ROC-AUC, F1-Score).
-      * Generate and save evaluation plots (ROC Curve, Precision-Recall Curve, Permutation Feature Importances) in a `plots/` directory.
-      * Save the trained model as `rf_flood_predictor.joblib`.
+## Configuration
 
-### Step 3: Flood Prediction on New Data (Python)
+Edit the configuration at the top of the script or in the `FloodAnalysisConfig` dataclass:
+- `csv_file_path`: Path to your CSV file
+- `initial_crs`: CRS of your data (default: `EPSG:4326`)
+- `fema_sfha_layer_id`: FEMA MapServer layer ID for SFHA (default: 27)
+- `sfha_zones`: List of FEMA flood zone codes considered as SFHA
 
-This script applies the trained model to the full predictor GeoTIFF exported from GEE, generating a flood probability map.
+### Advanced Configuration Example
 
-1.  **Update `apply_flood_model.py`**:
-      * Ensure the `load()` function points to your saved model file (e.g., `'rf_flood_predictor.joblib'`).
-      * Update `new_aoi = pd.read_csv("FloodSamples_NEW_AOI.csv")` to point to the CSV version of your `predictor_bands_for_ml_YYYYMMDD.tif`.
-          * **Note**: If you want to process the *GeoTIFF* directly, you will need to expand this script to use `rasterio` to load the GeoTIFF, read its bands into a `numpy` array or `pandas` DataFrame, and then apply the prediction. The current script expects a CSV. **The CSV should contain the same columns as your training data (`ndwi_post`, `mndwi_post`, `awei_post`, `VV`, `elevation`, `slope`, `Map`, `jrc_seasonality`) for the entire AOI you wish to predict over.**
-      * Ensure the feature list for `pd.get_dummies` is identical to the one used during training:
-        ```python
-        X_new = pd.get_dummies(new_aoi[['ndwi_post', 'mndwi_post', 'awei_post', 'VV',
-                                         'elevation', 'slope', 'Map', 'jrc_seasonality']],
-                               columns=['Map'])
-        ```
-2.  **Run the prediction script**:
-    ```bash
-    python apply_flood_model.py
-    ```
-    This script will:
-      * Load the trained model.
-      * Load the new AOI features.
-      * Perform one-hot encoding and column alignment to match the training data.
-      * Predict flood probabilities and binary flood classes.
-      * Save the `new_aoi` DataFrame with added `flood_probability` and `flood_predicted` columns to `FloodPredictions_NEW_AOI.csv`.
-      * Optionally, if `geopandas` is installed and a `.geo` column exists in your input CSV, it will display a basic plot of the predicted flood probabilities.
+```python
+config = FloodAnalysisConfig(
+    csv_file_path='data/miami_flood_predictions.csv',
+    initial_crs='EPSG:4326',
+    web_mercator_crs='EPSG:3857',
+    fema_sfha_layer_id=27,
+    sfha_zones=['A', 'AE', 'AH', 'AO', 'AR', 'A99', 'V', 'VE', 'VO'],
+    output_dir='miami_analysis_results'
+)
+```
 
-## Output
+---
 
-After running the scripts, you will have:
+## Troubleshooting
 
-  * **From GEE**:
-      * `FloodSamples_YYYYMMDD.csv`: Training data for the ML model.
-      * `predictor_bands_for_ml_YYYYMMDD.tif`: A GeoTIFF containing all predictor bands, ready for area-wide prediction.
-      * `flood_mask_final_YYYYMMDD.tif`: A preliminary flood mask derived directly from GEE thresholds.
-      * `changeMap_YYYYMMDD.tif`: A map showing various water change categories.
-  * **From Python**:
-      * `plots/` directory: Contains various evaluation plots (`roc_curve.png`, `precision_recall_curve.png`, `permutation_feature_importances.png`).
-      * `rf_flood_predictor.joblib`: The saved, trained Random Forest classification model.
-      * `FloodPredictions_NEW_AOI.csv`: A CSV file containing the input features for the new AOI, along with the predicted flood probabilities and binary classifications.
+- **No FEMA features found in AOI**  
+  Your area of interest may not overlap with any FEMA-mapped flood zones. Check your bounding box and ensure your AOI is covered by FEMA data.
 
-## Contributing
+- **Geometry parsing errors**  
+  Ensure your `.geo` column contains valid GeoJSON strings.
 
-Feel free to open issues or submit pull requests.
+- **Basemap not displaying**  
+  Requires internet connection and the `contextily` package.
+
+---
+
+## Example
+
+![Flood Analysis Map Example](outputs/flood_analysis_map.png)
+
+---
 
 ## License
 
-This project is open-source and available under the [MIT License](https://www.google.com/search?q=LICENSE).
+MIT License
 
-```
-```
+---
+
+## Acknowledgments
+
+- FEMA National Flood Hazard Layer (NFHL)
+- Google Earth Engine
+- Open source Python geospatial community
+
+---
+
+**For questions or contributions, please open an issue or pull request!**
+

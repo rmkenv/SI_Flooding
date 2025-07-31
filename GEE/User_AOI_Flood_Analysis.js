@@ -8,35 +8,25 @@ var scale = 30; // Resolution for exports and analysis in meters
 var maxImagesPre = 50; // Max images for pre-event composite (not currently used in monthly composite)
 var maxImagesPost = 20; // Max images for post-event composite (not currently used in monthly composite)
 
+// ================= AREA OF INTEREST & NAMING ==============================
 // ================= AREA OF INTEREST (AOI) & NAMING ==========================
-// Allow user to draw an AOI. If no AOI is drawn, default to a predefined area.
-// Instructions: Use the geometry drawing tools (point, line, rectangle, polygon)
-// on the map panel to define your Area of Interest. The last drawn geometry
-// will be used. If no geometry is drawn, a default AOI is used.
-var AOI_DEFAULT = ee.Geometry.Rectangle([-76.35, 36.85, -76.05, 36.98]); // Default to Norfolk, VA
+// Define the Area of Interest (AOI) by GPS coordinates as a single bounding box
+// encompassing Baltimore City, Baltimore County, and Howard County, Maryland.
+// Coordinates: [westLongitude, southLatitude, eastLongitude, northLatitude]
+var AOI = ee.Geometry.Rectangle([-77.3, 38.8, -76.0, 39.7]);
 
-var AOI = Map.geometry(); // Get the AOI drawn by the user from the Imports section/drawing tools
-
-// Check if a geometry has been drawn. If not, use the default.
-if (AOI.size().getInfo() === 0) { // Map.geometry() can return an empty FeatureCollection if nothing drawn
-  AOI = AOI_DEFAULT;
-  print('No AOI drawn by user. Using default AOI for Norfolk, VA.');
-} else {
-  print('Using user-drawn AOI.');
-}
-
-Map.centerObject(AOI, 11); // Center the map on the determined AOI with an appropriate zoom level
+Map.centerObject(AOI, 9); // Center the map on the AOI with an appropriate zoom level
 var dateString = postStart.split('-').join(''); // Create a date string for file naming
 
 // ========== ROBUST JOIN: S2_SR_HARMONIZED + S2_CLOUD_PROBABILITY ==========
 // Load Sentinel-2 Surface Reflectance Harmonized data
 var s2sr = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-    .filterBounds(AOI) // Use the determined AOI
+    .filterBounds(AOI)
     .filterDate(preStart, postEnd);
 
 // Load Sentinel-2 Cloud Probability data
 var s2clouds = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
-    .filterBounds(AOI) // Use the determined AOI
+    .filterBounds(AOI)
     .filterDate(preStart, postEnd);
 
 // Perform a robust join to combine Sentinel-2 SR with cloud probabilities
@@ -119,6 +109,7 @@ function compositeMonthly(collection, start, end) {
     var endDate = ee.Date(end);
 
     // Generate a sequence of months from start to end date
+    // Correction: Removed .subtract(1) to include the last month fully.
     var monthsToProcess = ee.List.sequence(0, endDate.difference(startDate, 'month').round());
 
     var monthlyComposites = monthsToProcess.map(function(offset_val) {
@@ -160,7 +151,7 @@ function compositeMonthly(collection, start, end) {
     // by checking for the presence of a specific band (e.g., 'B3').
     return imgCollection.filter(ee.Filter.listContains('system:band_names', 'B3'))
                         .map(function(image) {
-                            return image.clip(AOI); // Clip with the determined AOI
+                            return image.clip(AOI);
                         });
 }
 
@@ -176,7 +167,7 @@ print('postMonthly ImageCollection:', postMonthly); // Debug print
 // are still valid images with expected band structure (dummy bands if empty).
 var pre = ee.Image(ee.Algorithms.If(
     preMonthly.size().gt(0),
-    preMonthly.median().clip(AOI), // Ensure final median is also clipped with AOI
+    preMonthly.median().clip(AOI), // Ensure final median is also clipped
     // If preMonthly is empty, return a dummy image with expected bands (zeros)
     ee.Image().addBands(ee.Image.constant(0).rename('B3'))
               .addBands(ee.Image.constant(0).rename('B4'))
@@ -187,7 +178,7 @@ var pre = ee.Image(ee.Algorithms.If(
 
 var post = ee.Image(ee.Algorithms.If(
     postMonthly.size().gt(0),
-    postMonthly.median().clip(AOI), // Ensure final median is also clipped with AOI
+    postMonthly.median().clip(AOI), // Ensure final median is also clipped
     // If postMonthly is empty, return a dummy image with expected bands (zeros)
     ee.Image().addBands(ee.Image.constant(0).rename('B3'))
               .addBands(ee.Image.constant(0).rename('B4'))
@@ -247,7 +238,7 @@ var waterPostConsensus = waterPostSum.gte(2);
 // ============ SAR FLOOD MASK (SENTINEL-1) ==================================
 // Load Sentinel-1 Ground Range Detected (GRD) data
 var s1 = ee.ImageCollection('COPERNICUS/S1_GRD')
-    .filterBounds(AOI) // Use the determined AOI
+    .filterBounds(AOI)
     .filterDate(postStart, postEnd)
     .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV')) // Filter for VV polarization
     .filter(ee.Filter.eq('instrumentMode', 'IW')) // Filter for Interferometric Wide Swath mode
@@ -258,7 +249,7 @@ print('s1 collection:', s1); // Debug print
 // Guard against empty S1 collection
 var s1Composite = ee.Image(ee.Algorithms.If(
     s1.size().gt(0),
-    s1.median().clip(AOI), // Clip with the determined AOI
+    s1.median().clip(AOI),
     ee.Image.constant(0).rename('VV') // Dummy VV band if no S1 data
 ));
 
@@ -304,9 +295,9 @@ var floodFinal = floodUrbanMasked.updateMask(notPermanentWater);
 
 // ============ ADDITIONAL ML PREDICTORS =====================================
 // Add auxiliary data for potential machine learning classification
-var elevation = ee.Image('USGS/SRTMGL1_003').select('elevation').clip(AOI); // Clip with AOI
+var elevation = ee.Image('USGS/SRTMGL1_003').select('elevation').clip(AOI);
 var slope = ee.Terrain.slope(elevation);
-var landcover = ee.Image('ESA/WorldCover/v100/2020').select('Map').clip(AOI); // Clip with AOI
+var landcover = ee.Image('ESA/WorldCover/v100/2020').select('Map').clip(AOI);
 
 // ============ METADATA, SAMPLES, AND EXPORT ===============================
 // Visualize results on the map
@@ -330,7 +321,7 @@ Export.image.toDrive({
     description: 'flood_mask_final_' + dateString,
     folder: 'GEE_Flood',
     fileNamePrefix: 'flood_mask_final_' + dateString,
-    region: AOI, // Export using the determined AOI
+    region: AOI,
     scale: scale,
     maxPixels: 1e9,
     fileFormat: 'GeoTIFF'
@@ -349,7 +340,7 @@ var samples = floodFinal.rename('flood') // Renamed the flood mask band for clar
     .stratifiedSample({
         numPoints: 3000,
         classBand: 'flood', // Use the renamed band
-        region: AOI, // Sample using the determined AOI
+        region: AOI,
         scale: scale,
         seed: 42,
         geometries: true
@@ -370,7 +361,7 @@ Export.image.toDrive({
     description: 'changeMap_' + dateString,
     folder: 'GEE_Flood',
     fileNamePrefix: 'changeMap_' + dateString,
-    region: AOI, // Export using the determined AOI
+    region: AOI,
     scale: scale,
     maxPixels: 1e9,
     fileFormat: 'GeoTIFF'
@@ -411,7 +402,7 @@ Export.image.toDrive({
     description: 'predictor_bands_for_ml_' + dateString, // Unique description for the task
     folder: 'GEE_Flood_Predictors', // A new folder in your Drive for these GeoTIFFs
     fileNamePrefix: 'predictors_' + dateString, // Prefix for the output GeoTIFF file
-    region: AOI, // Export using the determined AOI
+    region: AOI, // Your Area of Interest
     scale: scale, // Resolution (defined in USER SETTINGS)
     maxPixels: 1e9, // Maximum number of pixels to export (adjust if needed for larger AOIs)
     fileFormat: 'GeoTIFF',

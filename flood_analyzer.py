@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FloodAnalysisConfig:
     """Configuration class for flood analysis parameters"""
-    csv_file_path: str = '/content/FloodPredictions_balt_AOI.csv'
+    csv_file_path: Optional[str] = None
     initial_crs: str = 'EPSG:4326'
     web_mercator_crs: str = 'EPSG:3857'
     
@@ -95,6 +95,10 @@ class FloodAnalyzer:
     
     def load_and_validate_data(self) -> pd.DataFrame:
         """Load CSV data with validation for required columns."""
+        if not self.config.csv_file_path:
+            logger.error("No CSV file path provided in config.")
+            raise ValueError("Cannot load data from CSV without a file path.")
+
         logger.info(f"Attempting to load data from: {self.config.csv_file_path}")
         try:
             df = pd.read_csv(self.config.csv_file_path)
@@ -188,13 +192,11 @@ class FloodAnalyzer:
             response = session.get(query_url, params=query_params, timeout=60)
             response.raise_for_status()
             
-            # Debug: Log response content type and first part of response
             logger.debug(f"Response content type: {response.headers.get('content-type')}")
             logger.debug(f"Response text (first 200 chars): {response.text[:200]}")
             
             data = response.json()
             
-            # Check for different response formats
             if 'features' in data:
                 features = data['features']
                 logger.info(f"Service {service_config['name']} returned {len(features)} features")
@@ -232,14 +234,10 @@ class FloodAnalyzer:
                     
                     fema_gdf = gpd.GeoDataFrame.from_features(data['features'], crs=self.config.initial_crs)
                     logger.info(f"Successfully loaded {len(fema_gdf)} features from {service_config['name']}")
-                    
-                    # Check available fields
                     logger.info(f"Available fields: {fema_gdf.columns.tolist()}")
                     
-                    # Try to filter for SFHA zones
                     zone_field = service_config['zone_field']
                     if zone_field in fema_gdf.columns:
-                        # Log unique zone values for debugging
                         unique_zones = fema_gdf[zone_field].unique()
                         logger.info(f"Unique flood zones found: {unique_zones}")
                         
@@ -250,7 +248,6 @@ class FloodAnalyzer:
                             return dissolved_sfha
                         else:
                             logger.warning(f"No SFHA zones found in {service_config['name']} after filtering")
-                            # Return all features if no SFHA zones match
                             logger.info("Returning all flood zone features instead of filtering for SFHA")
                             return fema_gdf.dissolve()
                     else:
@@ -296,11 +293,9 @@ class FloodAnalyzer:
         gdf_proj = gdf.to_crs(self.config.web_mercator_crs)
         fig, ax = plt.subplots(1, 1, figsize=(16, 12))
         
-        # Plot study area
         gdf_proj.plot(ax=ax, color='lightgray', edgecolor='gray', alpha=0.05,
                       linewidth=0.5, label='Study Area')
         
-        # Plot FEMA zones
         if fema_gdf is not None and not fema_gdf.empty:
             fema_proj = fema_gdf.to_crs(self.config.web_mercator_crs)
             fema_proj.plot(ax=ax, color='cyan', edgecolor='darkblue', alpha=0.6,
@@ -309,20 +304,17 @@ class FloodAnalyzer:
         else:
             logger.warning("No FEMA zones to plot")
         
-        # Plot flood predictions
         flooded_all = gdf_proj[gdf_proj['flood_predicted'] == 1]
         if not flooded_all.empty:
             flooded_all.plot(ax=ax, color='red', alpha=0.8, markersize=8,
                             label=f'Model Predicted Flood ({len(flooded_all)})')
         
-        # Highlight outside FEMA
         if not outside_fema.empty:
             outside_proj = outside_fema.to_crs(self.config.web_mercator_crs)
             outside_proj.plot(ax=ax, color='yellow', marker='X', markersize=30,
                              edgecolor='black', linewidth=2,
                              label=f'Outside FEMA Zones ({len(outside_proj)})')
         
-        # Add basemap
         try:
             ctx.add_basemap(ax, crs=self.config.web_mercator_crs,
                            source=ctx.providers.Esri.WorldImagery, alpha=0.85)
@@ -330,13 +322,11 @@ class FloodAnalyzer:
         except Exception as e:
             logger.warning(f"Could not add basemap: {e}")
         
-        # Styling
-        ax.set_title('Flood Risk Analysis: Model Predictions vs FEMA Data\nBaltimore AOI',
+        ax.set_title('Flood Risk Analysis: Model Predictions vs FEMA Data',
                     fontsize=16, fontweight='bold', pad=20)
         ax.set_xlabel('Eastings (m)', fontsize=12)
         ax.set_ylabel('Northings (m)', fontsize=12)
         
-        # Set extent
         if not gdf_proj.empty:
             minx, miny, maxx, maxy = gdf_proj.total_bounds
             buffer_x = (maxx - minx) * 0.15
@@ -344,7 +334,6 @@ class FloodAnalyzer:
             ax.set_xlim(minx - buffer_x, maxx + buffer_x)
             ax.set_ylim(miny - buffer_y, maxy + buffer_y)
         
-        # Legend
         legend = ax.legend(loc='upper left', frameon=True, facecolor='white',
                           edgecolor='black', shadow=True, fontsize=10)
         legend.get_frame().set_alpha(0.9)
@@ -372,7 +361,6 @@ class FloodAnalyzer:
             'aoi_crs': str(gdf.crs)
         }
         
-        # Save report
         report_path = Path(self.config.output_dir) / 'analysis_report.json'
         try:
             with open(report_path, 'w') as f:
@@ -389,7 +377,8 @@ class FloodAnalyzer:
         output_dir = Path(self.config.output_dir)
         
         try:
-            gdf.to_file(output_dir / 'all_flood_predictions.geojson', driver='GeoJSON')
+            # Save only the flooded predictions to the main geojson file for clarity
+            gdf[gdf['flood_predicted'] == 1].to_file(output_dir / 'all_flood_predictions.geojson', driver='GeoJSON')
             logger.info("Saved all predictions to GeoJSON")
             
             if not outside_fema.empty:
@@ -403,24 +392,30 @@ class FloodAnalyzer:
         except Exception as e:
             logger.error(f"Error saving outputs: {e}")
     
-    def run_analysis(self) -> Dict[str, Any]:
-        """Execute complete analysis pipeline"""
+    def run_analysis(self, input_gdf: Optional[gpd.GeoDataFrame] = None) -> Dict[str, Any]:
+        """
+        Execute complete analysis pipeline.
+        Can be run by providing a GeoDataFrame directly, or by configuring a CSV file path.
+        """
         logger.info("Starting Flood Risk Analysis Pipeline")
         try:
-            # Load and process data
-            df = self.load_and_validate_data()
-            gdf = self.create_geodataframe(df)
+            if input_gdf is not None:
+                logger.info("Using provided GeoDataFrame for analysis.")
+                if not isinstance(input_gdf, gpd.GeoDataFrame):
+                    raise TypeError("input_gdf must be a GeoDataFrame.")
+                gdf = input_gdf
+            else:
+                logger.info("Loading data from CSV file.")
+                df = self.load_and_validate_data()
+                gdf = self.create_geodataframe(df)
             
-            # Fetch FEMA data with fallback services
+            if gdf.empty:
+                logger.warning("Input GeoDataFrame is empty. No analysis to perform.")
+                return {}
+
             fema_gdf = self.fetch_fema_data(gdf.total_bounds)
-            
-            # Analyze areas outside FEMA zones
             outside_fema = self.identify_outside_fema(gdf, fema_gdf)
-            
-            # Create visualization
             fig = self.create_enhanced_plot(gdf, fema_gdf, outside_fema)
-            
-            # Generate reports and save outputs
             report = self.generate_summary_report(gdf, fema_gdf, outside_fema)
             self.save_outputs(gdf, outside_fema, fig)
             
@@ -437,16 +432,41 @@ class FloodAnalyzer:
             raise
 
 def main():
-    """Main execution function"""
+    """Main execution function demonstrating the new STAC-based workflow."""
     print("\n" + "="*60)
-    print("      Flood Risk Analysis Application")
+    print("      Flood Risk Analysis Application (STAC Workflow)")
     print("="*60 + "\n")
     
+    # This demonstrates the new STAC-based workflow
+    from predict_from_stac import predict_flood_from_stac
+
+    # Define parameters for the STAC-based prediction
+    # Bounding box for Miami-Dade County, Florida
+    miami_bbox = [-80.8738, 25.1398, -80.1308, 25.9564]
+    post_flood_daterange = "2024-01-01/2024-02-01"
+    analysis_resolution = 30  # meters
+    model_path = 'rf_flood_predictor.joblib'
+
     try:
-        config = FloodAnalysisConfig()
+        # 1. Get flood predictions using the new STAC workflow
+        print("Running STAC-based flood prediction...")
+        flood_gdf = predict_flood_from_stac(
+            bbox=miami_bbox,
+            post_daterange=post_flood_daterange,
+            resolution=analysis_resolution,
+            model_path=model_path
+        )
+
+        if flood_gdf.empty:
+            print("No flood predictions were generated. Exiting analysis.")
+            return
+
+        # 2. Run the analysis on the predictions
+        print("\nRunning flood analysis against FEMA data...")
+        config = FloodAnalysisConfig(output_dir='stac_analysis_outputs')
         analyzer = FloodAnalyzer(config)
-        report = analyzer.run_analysis()
-        
+        report = analyzer.run_analysis(input_gdf=flood_gdf)
+
         print("\n" + "="*60)
         print("                 ANALYSIS SUMMARY")
         print("="*60)
@@ -458,9 +478,13 @@ def main():
         print(f"Flooded Outside FEMA:      {report['model_flooded_outside_fema_count']}")
         print("="*60 + "\n")
         
+    except FileNotFoundError:
+        logger.error(f"Could not find the model file: '{model_path}'.")
+        logger.error("Please ensure the pre-trained model is available.")
+        print(f"\nERROR: Model file not found at '{model_path}'. Please train the model first.")
     except Exception as e:
-        logger.error(f"Application failed: {e}")
-        print(f"\nERROR: {e}")
+        logger.error(f"Application failed: {e}", exc_info=True)
+        print(f"\nAn unexpected error occurred: {e}")
 
 if __name__ == "__main__":
     main()

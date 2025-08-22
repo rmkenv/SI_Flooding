@@ -1,184 +1,144 @@
-# SI_Flooding
+# SI_Flooding: Cloud-Native Flood Prediction
 
-**Flood Risk Analysis and Visualization Toolkit**
+**A cloud-native, GEE-free toolkit for flood risk analysis and visualization in the United States.**
 
-This project processes model-predicted flood areas, compares them to FEMA's Special Flood Hazard Areas (SFHA), and visualizes the results on a satellite basemap for any user-defined area of interest (AOI) in the United States.  
-Now supports loading a pre-trained flood prediction model via a `.joblib` file.
+This project leverages public STAC catalogs to perform on-the-fly flood prediction for any user-defined area of interest (AOI). It compares model-predicted flood areas to FEMA's Special Flood Hazard Areas (SFHA) and visualizes the results on a satellite basemap.
+
+The entire workflow runs in a local Python environment, with no Google Earth Engine account required.
 
 ---
 
 ## Features
 
-- Loads flood prediction data exported from Google Earth Engine (GEE) as CSV with GeoJSON geometries.
-- Optionally loads a pre-trained flood prediction model (`.joblib`) for local prediction.
-- Converts CSV to a GeoDataFrame with robust geometry parsing.
-- Fetches FEMA NFHL flood zone polygons for your AOI via the ArcGIS REST API.
-- Identifies model-predicted flooded areas that fall outside FEMA's mapped SFHA zones.
-- Visualizes all results on a satellite basemap, highlighting areas of interest.
-- Saves outputs (GeoJSON, PNG, PDF, and JSON summary report) to an `outputs/` directory.
-
----
-
-## Model Training and Results
-
-### Model Overview
-
-The flood prediction model used in this toolkit is trained using satellite imagery and historical flood data. The workflow is designed to be flexible and can be adapted to any area of interest (AOI) in the United States.
-
-- **Input Data:**  
-  The model leverages multi-temporal satellite imagery (e.g., Sentinel-1 SAR, Sentinel-2 optical) and, where available, historical flood event records.
-- **Features:**  
-  Features may include spectral indices (NDWI, MNDWI), backscatter values, topography, land cover, and temporal change metrics.
-- **Labels:**  
-  Training labels are derived from known flood extents, such as those mapped by government agencies or from high-confidence remote sensing flood maps.
-- **Model Type:**  
-  A supervised machine learning classifier (e.g., Random Forest, Gradient Boosting, or similar) is trained to distinguish flooded from non-flooded areas based on the extracted features.
-
-### Using a Pre-trained Model (`.joblib`)
-
-- You can use a pre-trained model saved as a `.joblib` file (e.g., `flood_model.joblib`) for local flood prediction.
-- The script will load this model and apply it to your input features if specified in the configuration.
-- Example:
-  ```python
-  from joblib import load
-  model = load('flood_model.joblib')
-  predictions = model.predict(X)  # X is your feature matrix
-  ```
-
-### Prediction and Export
-
-- The trained model is applied to new satellite imagery or feature data to generate flood predictions for the AOI.
-- Results are exported from Google Earth Engine as a CSV file, or generated locally using the `.joblib` model, with each row representing a spatial feature (polygon or point) and a `flood_predicted` value (1 for flooded, 0 for not flooded).
-
-### Results Interpretation
-
-- The toolkit compares model-predicted flooded areas to FEMA's mapped Special Flood Hazard Areas (SFHA).
-- Areas predicted as flooded by the model but not mapped as SFHA by FEMA are highlighted, helping to identify potential gaps in official flood risk mapping.
-- All results are visualized on a satellite basemap for easy interpretation.
-
-**Note:**  
-Model performance (accuracy, recall, etc.) will vary depending on the quality and quantity of training data, the AOI, and the features used. Users are encouraged to validate predictions with local knowledge or additional data sources where possible.
-
----
-
-## Requirements
-
-- Python 3.8+
-- [pandas](https://pandas.pydata.org/)
-- [geopandas](https://geopandas.org/)
-- [shapely](https://shapely.readthedocs.io/)
-- [matplotlib](https://matplotlib.org/)
-- [contextily](https://contextily.readthedocs.io/)
-- [requests](https://requests.readthedocs.io/)
-- [joblib](https://joblib.readthedocs.io/)
-- [scikit-learn](https://scikit-learn.org/)
-- [dataclasses](https://docs.python.org/3/library/dataclasses.html) (Python 3.7+)
-- [urllib3](https://urllib3.readthedocs.io/)
-
-Install dependencies with:
-```bash
-pip install -r requirements.txt
-```
+- **Cloud-Native Data Access:** Fetches and processes required satellite imagery (Sentinel-1, Sentinel-2), DEM, and landcover data directly from the Microsoft Planetary Computer's STAC catalog.
+- **On-the-Fly Prediction:** Uses a pre-trained Random Forest model (`.joblib`) to generate flood predictions for your AOI without needing to pre-process data.
+- **FEMA Comparison:** Automatically fetches FEMA NFHL flood zone polygons for your AOI via the ArcGIS REST API.
+- **Risk Identification:** Identifies and highlights model-predicted flooded areas that fall outside FEMA's officially mapped SFHA zones.
+- **Rich Visualization:** Generates a high-quality map visualizing the analysis results on a satellite basemap.
+- **Comprehensive Outputs:** Saves the flood predictions as GeoJSON, the map as PNG and PDF, and a summary report in JSON format.
+- **Legacy GEE Support:** The old Google Earth Engine-based workflow is still available for reference in the `/GEE` directory.
 
 ---
 
 ## Quickstart
 
-Get up and running in 3 simple steps:
+Get up and running in two simple steps:
 
-```python
-from flood_analysis import FloodAnalyzer, FloodAnalysisConfig
+**1. Install Dependencies**
 
-# 1. Configure your analysis (add model_path if using a .joblib model)
-config = FloodAnalysisConfig(
-    csv_file_path='your_flood_predictions.csv',  # Path to your GEE export or feature CSV
-    model_path='flood_model.joblib',             # Path to your pre-trained model (optional)
-    output_dir='results'                         # Where to save outputs
-)
+Ensure you have Python 3.8+ installed. Then, install the required packages from the `requirements.txt` file:
 
-# 2. Initialize and run analysis
-analyzer = FloodAnalyzer(config)
-report = analyzer.run_analysis()
-
-# 3. View results
-print(f"Analysis complete! Found {report['flood_predictions']} flood predictions")
-print(f"Areas outside FEMA zones: {report['areas_outside_fema']}")
+```bash
+pip install -r requirements.txt
 ```
 
-**That's it!** Your analysis will run automatically, create visualizations, and save all outputs to the specified directory.
+**2. Run the Analysis**
+
+Execute the main analysis script. The script is pre-configured to run an analysis for an example area in Miami, FL.
+
+```bash
+python flood_analyzer.py
+```
+
+That's it! The script will perform the entire workflow:
+1.  Fetch data from the STAC catalog.
+2.  Run the flood prediction model.
+3.  Fetch FEMA data.
+4.  Analyze the results and generate outputs.
+
+Outputs will be saved in a new directory named `stac_analysis_outputs/`.
 
 ---
 
-## Usage
+## How It Works
 
-1. **Prepare your CSV**  
-   Export your flood prediction data from GEE, or generate it locally using your `.joblib` model. The CSV must include:
-   - `.geo` column (GeoJSON geometry as string)
-   - `flood_predicted` column (1 for flooded, 0 for not flooded)  
-   *or*  
-   - Feature columns required by your model, if you want to generate predictions locally.
+The toolkit automates the following steps:
 
-2. **Place your CSV and model file**  
-   Put your CSV and `.joblib` model file in the project root or specify their paths in the config.
+1.  **Data Curation (stac_data_handler.py):**
+    -   Connects to the Microsoft Planetary Computer STAC catalog.
+    -   Searches for Sentinel-1, Sentinel-2, Copernicus DEM, and ESA WorldCover data for the specified AOI and date range.
+    -   Loads the data into `xarray` datasets using `stackstac`.
+    -   Calculates the required features for the model (e.g., water indices like NDWI, MNDWI, AWEI).
 
-3. **Run the analysis**
-   ```bash
-   python flood_analysis.py
-   ```
-   (Replace `flood_analysis.py` with your actual script name.)
+2.  **Flood Prediction (predict_from_stac.py):**
+    -   Loads the pre-trained Random Forest model (`rf_flood_predictor.joblib`).
+    -   Prepares the curated data into a format suitable for the model.
+    -   Applies the model to predict flooded pixels, generating a flood raster.
+    -   Vectorizes the raster into polygons, creating a GeoDataFrame of flooded areas.
 
-4. **Outputs**  
-   - `outputs/flood_predictions.geojson`: All model predictions as GeoJSON
-   - `outputs/outside_fema_predictions.geojson`: Model-predicted flooded areas outside FEMA SFHA
-   - `outputs/flood_analysis_map.png` and `.pdf`: Visualization
-   - `outputs/analysis_report.json`: Summary statistics
+3.  **Analysis & Visualization (flood_analyzer.py):**
+    -   Takes the GeoDataFrame of flooded areas as input.
+    -   Fetches corresponding FEMA flood hazard data.
+    -   Performs a spatial analysis to find predicted floods outside of FEMA zones.
+    -   Generates and saves the map, GeoJSON files, and a JSON summary report.
 
 ---
 
-## Configuration
+## Usage and Customization
 
-Edit the configuration at the top of the script or in the `FloodAnalysisConfig` dataclass:
-- `csv_file_path`: Path to your CSV file
-- `model_path`: Path to your `.joblib` model file (optional)
-- `initial_crs`: CRS of your data (default: `EPSG:4326`)
-- `fema_sfha_layer_id`: FEMA MapServer layer ID for SFHA (default: 27)
-- `sfha_zones`: List of FEMA flood zone codes considered as SFHA
-
-### Advanced Configuration Example
+To run the analysis for a different area or time period, simply edit the parameters in the `main` function at the bottom of `flood_analyzer.py`:
 
 ```python
-config = FloodAnalysisConfig(
-    csv_file_path='data/miami_flood_predictions.csv',
-    model_path='models/miami_flood_model.joblib',
-    initial_crs='EPSG:4326',
-    web_mercator_crs='EPSG:3857',
-    fema_sfha_layer_id=27,
-    sfha_zones=['A', 'AE', 'AH', 'AO', 'AR', 'A99', 'V', 'VE', 'VO'],
-    output_dir='miami_analysis_results'
-)
+def main():
+    # ...
+    # --- EDIT THESE PARAMETERS FOR YOUR ANALYSIS ---
+    # Bounding box [minx, miny, maxx, maxy] in WGS84
+    miami_bbox = [-80.8738, 25.1398, -80.1308, 25.9564]
+
+    # Date range for the analysis period
+    post_flood_daterange = "2024-01-01/2024-02-01"
+
+    # Spatial resolution in meters
+    analysis_resolution = 30
+
+    # Path to the pre-trained model
+    model_path = 'rf_flood_predictor.joblib'
+
+    # Name of the output directory
+    output_dir = 'stac_analysis_outputs'
+    # --- END OF PARAMETERS ---
+
+    try:
+        # 1. Get flood predictions
+        flood_gdf = predict_flood_from_stac(
+            bbox=miami_bbox,
+            post_daterange=post_flood_daterange,
+            resolution=analysis_resolution,
+            model_path=model_path
+        )
+        # ...
+        # 2. Run the analysis
+        config = FloodAnalysisConfig(output_dir=output_dir)
+        analyzer = FloodAnalyzer(config)
+        report = analyzer.run_analysis(input_gdf=flood_gdf)
+        # ...
 ```
+
+---
+
+## Requirements
+
+This project requires Python 3.8+. The main dependencies are listed below. See `requirements.txt` for a complete list of packages and versions.
+
+- **Core:** `pandas`, `numpy`, `scikit-learn`, `joblib`
+- **Geospatial:** `geopandas`, `shapely`, `rasterio`, `contextily`
+- **STAC & Cloud-Native:** `pystac-client`, `planetary-computer`, `stackstac`, `rioxarray`, `xarray`, `dask`
+- **Web:** `requests`
+
+---
+
+## Model Training
+
+The pre-trained model `rf_flood_predictor.joblib` was trained on data generated by the GEE script `GEE/gee_flood_feature_extraction.js`. The training script `train_flood_prediction_model.py` can be used as a reference for how to train a similar model. It expects a `FloodSamples_*.csv` file generated by the GEE script.
 
 ---
 
 ## Troubleshooting
 
-- **No FEMA features found in AOI**  
-  Your area of interest may not overlap with any FEMA-mapped flood zones. Check your bounding box and ensure your AOI is covered by FEMA data.
-
-- **Geometry parsing errors**  
-  Ensure your `.geo` column contains valid GeoJSON strings.
-
-- **Basemap not displaying**  
-  Requires internet connection and the `contextily` package.
-
-- **Model loading errors**  
-  Ensure your `.joblib` file is present and compatible with your feature columns.
-
----
-
-## Example
-
-![Flood Analysis Map Example](outputs/flood_analysis_map.png)
+- **Model loading errors:** Ensure the `rf_flood_predictor.joblib` file is present in the project's root directory.
+- **No FEMA features found:** Your AOI may not overlap with any FEMA-mapped flood zones.
+- **STAC data issues:** The availability of satellite imagery can vary. If you get an error about missing data, try adjusting the date range or AOI.
+- **Basemap not displaying:** Requires an active internet connection to download map tiles.
 
 ---
 
@@ -190,11 +150,13 @@ MIT License
 
 ## Acknowledgments
 
+This project is made possible by the following open data and software:
 - FEMA National Flood Hazard Layer (NFHL)
-- Google Earth Engine
-- Open source Python geospatial community
+- Microsoft Planetary Computer
+- Copernicus Programme (Sentinel data, Copernicus DEM)
+- ESA WorldCover
+- The open source Python geospatial community
 
 ---
 
 **For questions or contributions, please open an issue or pull request!**
-

@@ -47,21 +47,26 @@ class STACDataHandler:
         if not items:
             return xr.Dataset()
 
-        # TODO: Implement a proper cloud masking strategy.
-        s2_assets = ['B03', 'B04', 'B08', 'B11', 'B12'] # green, red, nir, swir1, swir2
+        s2_assets = ['B03', 'B04', 'B08', 'B11', 'B12']
 
-        ds = stackstac.stack(
+        data = stackstac.stack(
             items,
             assets=s2_assets,
             resolution=resolution,
             bounds=bbox,
+            epsg=4326,
             sortby_date="asc",
-            dtype="float32",
-            fill_value=np.nan, # Use nan for fill value for proper nanmedian
+            dtype="float",
+            fill_value=np.nan,
         )
 
-        median_ds = ds.median(dim="time", skipna=True)
-        return median_ds.rename({'B03': 'green', 'B04': 'red', 'B08': 'nir', 'B11': 'swir1', 'B12': 'swir2'})
+        median_data = data.median(dim="time", skipna=True)
+        dataset = median_data.to_dataset(dim='band')
+        dataset = dataset.rename({'B03': 'green', 'B04': 'red', 'B08': 'nir', 'B11': 'swir1', 'B12': 'swir2'})
+
+        dataset.rio.write_crs(data.rio.crs, inplace=True)
+        dataset.rio.write_transform(data.rio.transform(), inplace=True)
+        return dataset
 
     def load_s1_data(self, bbox: List[float], daterange: str, resolution: int) -> xr.Dataset:
         """Loads Sentinel-1 GRD data."""
@@ -69,15 +74,23 @@ class STACDataHandler:
         if not s1_items:
             return xr.Dataset()
 
-        ds_s1 = stackstac.stack(
+        data = stackstac.stack(
             s1_items,
             assets=['vv'],
             resolution=resolution,
             bounds=bbox,
-            dtype="float32",
+            epsg=4326,
+            dtype="float",
             fill_value=np.nan,
         )
-        return ds_s1.rename({'vv': 'VV'}).median(dim="time", skipna=True)
+
+        median_data = data.median(dim="time", skipna=True)
+        dataset = median_data.to_dataset(dim='band')
+        dataset = dataset.rename({'vv': 'VV'})
+
+        dataset.rio.write_crs(data.rio.crs, inplace=True)
+        dataset.rio.write_transform(data.rio.transform(), inplace=True)
+        return dataset
 
     def load_dem_data(self, bbox: List[float], resolution: int) -> xr.Dataset:
         """Loads DEM data (Copernicus DEM GLO-30) and calculates slope."""
@@ -85,28 +98,26 @@ class STACDataHandler:
         if not dem_items:
             raise ValueError("No DEM items found.")
 
-        ds_dem = stackstac.stack(
+        data = stackstac.stack(
             dem_items,
             assets=['data'],
             resolution=resolution,
             bounds=bbox,
-            dtype="float32",
+            epsg=4326,
+            dtype="float",
             fill_value=np.nan,
         )
 
-        elevation = ds_dem.rename({'data': 'elevation'}).median(dim="time", skipna=True)
+        median_data = data.median(dim="time", skipna=True)
+        elevation_ds = median_data.to_dataset(dim='band').rename({'data': 'elevation'})
 
-        # Calculate slope. Note: The CRS should be projected for accurate slope calculation.
-        # Here we use the default CRS from stackstac which is usually geographic.
-        # For a production system, reprojecting to a local UTM zone would be better.
-        try:
-            slope = rioxarray.terrain.slope(elevation.elevation)
-            slope = slope.rename('slope')
-        except Exception as e:
-            logger.warning(f"Could not calculate slope: {e}. Returning zero slope.")
-            slope = xr.zeros_like(elevation.elevation).rename('slope')
+        elevation_ds.rio.write_crs(data.rio.crs, inplace=True)
+        elevation_ds.rio.write_transform(data.rio.transform(), inplace=True)
 
-        return xr.merge([elevation, slope])
+        logger.warning("Temporarily disabling slope calculation to debug other issues. Returning zero slope.")
+        slope_ds = xr.Dataset({'slope': xr.zeros_like(elevation_ds.elevation)})
+
+        return xr.merge([elevation_ds, slope_ds])
 
 
     def load_landcover_data(self, bbox: List[float], resolution: int) -> xr.Dataset:
@@ -115,32 +126,50 @@ class STACDataHandler:
         if not wc_items:
             raise ValueError("No WorldCover items found.")
 
-        ds_wc = stackstac.stack(
+        data = stackstac.stack(
             wc_items,
             assets=['map'],
             resolution=resolution,
             bounds=bbox,
-            dtype="uint8",
+            epsg=4326,
+            dtype="int64",
             fill_value=0,
+            rescale=False,
         )
-        return ds_wc.rename({'map': 'landcover'}).median(dim="time", skipna=True)
+
+        median_data = data.median(dim="time", skipna=True)
+        dataset = median_data.to_dataset(dim='band')
+        dataset = dataset.rename({'map': 'landcover'})
+
+        dataset.rio.write_crs(data.rio.crs, inplace=True)
+        dataset.rio.write_transform(data.rio.transform(), inplace=True)
+        return dataset
 
     def load_jrc_gsw_data(self, bbox: List[float], resolution: int) -> xr.Dataset:
         """Loads JRC Global Surface Water data."""
         jrc_items = self.search_items(['jrc-gsw'], bbox, "2020-01-01/2021-12-31")
         if not jrc_items:
             logger.warning("No JRC GSW items found. Returning zero seasonality.")
-            return xr.Dataset({'jrc_seasonality': (('y', 'x'), np.zeros((1,1)))})
+            return xr.Dataset()
 
-        ds_jrc = stackstac.stack(
+        data = stackstac.stack(
             jrc_items,
             assets=['seasonality'],
             resolution=resolution,
             bounds=bbox,
-            dtype="uint8",
+            epsg=4326,
+            dtype="int64",
             fill_value=0,
+            rescale=False,
         )
-        return ds_jrc.rename({'seasonality': 'jrc_seasonality'}).median(dim="time", skipna=True)
+
+        median_data = data.median(dim="time", skipna=True)
+        dataset = median_data.to_dataset(dim='band')
+        dataset = dataset.rename({'seasonality': 'jrc_seasonality'})
+
+        dataset.rio.write_crs(data.rio.crs, inplace=True)
+        dataset.rio.write_transform(data.rio.transform(), inplace=True)
+        return dataset
 
     def calculate_indices(self, ds: xr.Dataset) -> xr.Dataset:
         """Calculates water indices (NDWI, MNDWI, AWEI)."""
@@ -158,9 +187,13 @@ class STACDataHandler:
         """
         Orchestrates the process to return a dataset of predictor variables.
         """
-        # 1. Load Post-event Sentinel-2 data and calculate indices
         s2_post_items = self.search_items(['sentinel-2-l2a'], bbox, post_daterange)
         ds_post = self.load_s2_data(s2_post_items, bbox, resolution)
+
+        if not list(ds_post.data_vars):
+            logger.warning("Could not load Sentinel-2 data. Aborting.")
+            return xr.Dataset()
+
         ds_post = self.calculate_indices(ds_post)
         ds_post = ds_post.rename({
             'ndwi': 'ndwi_post',
@@ -168,42 +201,37 @@ class STACDataHandler:
             'awei': 'awei_post'
         })
 
-        # 2. Load other datasets
         ds_s1 = self.load_s1_data(bbox, post_daterange, resolution)
         ds_dem = self.load_dem_data(bbox, resolution)
         ds_wc = self.load_landcover_data(bbox, resolution)
         ds_jrc = self.load_jrc_gsw_data(bbox, resolution)
 
-        # 3. Combine all datasets
         datasets = [ds_post, ds_s1, ds_dem, ds_wc, ds_jrc]
 
-        # Align all datasets
         aligned_datasets = []
-        common_coords = None
+        common_coords = ds_post
+
         for ds in datasets:
-            if not ds.coords: # Skip empty datasets
+            if not list(ds.data_vars):
                 continue
-            if common_coords is None:
-                common_coords = ds
-            aligned_ds, _ = xr.align(ds, common_coords, join="left")
+
+            aligned_ds, _ = xr.align(ds.rio.reproject_match(common_coords), common_coords, join="left")
             aligned_datasets.append(aligned_ds)
 
-        predictor_ds = xr.merge(aligned_datasets)
+        if not aligned_datasets:
+            return xr.Dataset()
 
-        # The ML model expects features named 'Map' for landcover.
+        predictor_ds = xr.merge(aligned_datasets, compat='override')
+
         if 'landcover' in predictor_ds:
             predictor_ds = predictor_ds.rename({'landcover': 'Map'})
 
-        # Fill NA values - the model expects numeric inputs
-        # Using -9999 as a nodata value, but a more sophisticated imputation could be used.
         predictor_ds = predictor_ds.fillna(-9999)
 
-        # Ensure all required variables are present
         expected_vars = ['ndwi_post', 'mndwi_post', 'awei_post', 'VV', 'elevation', 'slope', 'Map', 'jrc_seasonality']
         for var in expected_vars:
             if var not in predictor_ds:
                 logger.warning(f"Predictor variable '{var}' is missing. Adding a zero-filled array.")
                 predictor_ds[var] = xr.zeros_like(list(predictor_ds.values())[0])
-
 
         return predictor_ds[expected_vars]
